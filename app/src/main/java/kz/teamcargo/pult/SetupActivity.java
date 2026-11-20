@@ -64,12 +64,12 @@ public class SetupActivity extends Activity {
     private int address;
     private int command;
     private int mode = MODE_CMD;
-    private int speed = 1;
+    private int speed = 0;
     private boolean running;
     private final ArrayDeque<int[]> history = new ArrayDeque<>();
 
     private TextView addrView, cmdView, stateView;
-    private Button necBtn, samBtn, modeAddrBtn, modeCmdBtn, speedBtn, startBtn, assignBtn;
+    private Button necBtn, samBtn, rc5Btn, rc6Btn, modeAddrBtn, modeCmdBtn, speedBtn, startBtn, assignBtn;
     private LinearLayout historyBox, assignedBox;
 
     @Override
@@ -82,7 +82,7 @@ public class SetupActivity extends Activity {
         targetKey = getIntent().getStringExtra(EXTRA_KEY);
         command = 0;
         if (targetKey != null && cfg.command(targetKey) >= 0) command = cfg.command(targetKey);
-        mode = cfg.configuredCount() == 0 && targetKey == null ? MODE_ADDR : MODE_CMD;
+        mode = MODE_CMD;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().getDecorView().setBackgroundColor(Ui.BG);
         setContentView(build());
@@ -119,8 +119,7 @@ public class SetupActivity extends Activity {
                 "Телефон умеет только передавать ИК-сигнал, принимать его он не может. Поэтому коды подбираются перебором: "
                         + "направь телефон верхним торцом на приставку, запусти перебор и смотри на экран телевизора. "
                         + "Как только приставка что-то сделала, жми большую кнопку «Сработало!».\n\n"
-                        + "Шаг 1. Режим «Найти адрес»: на каждый адрес уходят все 256 команд (≈40 с на адрес). "
-                        + "Когда приставка впервые отреагирует, адрес найден.\n"
+                        + "Шаг 1. «⚡ Найти приставку»: быстрый поиск адреса и протокола (обычно 1–5 минут).\n"
                         + "Шаг 2. Режим «Подбор команд»: команды идут по одной. Увидел реакцию, жми «Сработало!», "
                         + "проверь команду из списка последних и назначь её кнопке.\n\n"
                         + "Перебор может открыть меню приставки или переключить канал. Это не страшно: потом нажми «Выход».",
@@ -128,12 +127,18 @@ public class SetupActivity extends Activity {
 
         root.addView(Ui.title(this, "Протокол"));
         LinearLayout pr = Ui.row(this);
-        necBtn = Ui.button(this, "NEC (обычно он)", Ui.KEY);
+        necBtn = Ui.button(this, "NEC", Ui.KEY);
         samBtn = Ui.button(this, "Samsung", Ui.KEY);
+        rc5Btn = Ui.button(this, "RC5", Ui.KEY);
+        rc6Btn = Ui.button(this, "RC6", Ui.KEY);
         necBtn.setOnClickListener(v -> setProtocol(IrCodec.NEC));
         samBtn.setOnClickListener(v -> setProtocol(IrCodec.SAMSUNG));
+        rc5Btn.setOnClickListener(v -> setProtocol(IrCodec.RC5));
+        rc6Btn.setOnClickListener(v -> setProtocol(IrCodec.RC6));
         Ui.add(pr, necBtn, 1);
-        Ui.add(pr, samBtn, 1);
+        Ui.add(pr, samBtn, 1.3f);
+        Ui.add(pr, rc5Btn, 1);
+        Ui.add(pr, rc6Btn, 1);
         root.addView(pr);
 
         root.addView(Ui.title(this, "Адрес приставки"));
@@ -145,15 +150,17 @@ public class SetupActivity extends Activity {
         Button aEdit = Ui.button(this, "Ввести", Ui.KEY);
         aMinus.setOnClickListener(v -> {
             stop();
-            address = (address + 0xFF) & 0xFF;
+            int m = Math.min(IrCodec.maxAddress(protocol), 0xFF);
+            address = address <= 0 ? m : Math.min(address - 1, m);
             refresh();
         });
         aPlus.setOnClickListener(v -> {
             stop();
-            address = (address + 1) & 0xFF;
+            int m = Math.min(IrCodec.maxAddress(protocol), 0xFF);
+            address = address >= m ? 0 : address + 1;
             refresh();
         });
-        aEdit.setOnClickListener(v -> askHex("Адрес (hex, 00–FF или 4 знака для расширенного NEC)", address, 0xFFFF, val -> {
+        aEdit.setOnClickListener(v -> askHex("Адрес (hex, 00–FF или 4 знака для расширенного NEC)", address, IrCodec.maxAddress(protocol), val -> {
             address = val;
             refresh();
         }));
@@ -172,15 +179,17 @@ public class SetupActivity extends Activity {
         Button cEdit = Ui.button(this, "Ввести", Ui.KEY);
         cMinus.setOnClickListener(v -> {
             stop();
-            command = (command + 0xFF) & 0xFF;
+            int m = IrCodec.maxCommand(protocol);
+            command = command <= 0 ? m : Math.min(command - 1, m);
             sendCurrent();
         });
         cPlus.setOnClickListener(v -> {
             stop();
-            command = (command + 1) & 0xFF;
+            int m = IrCodec.maxCommand(protocol);
+            command = command >= m ? 0 : command + 1;
             sendCurrent();
         });
-        cEdit.setOnClickListener(v -> askHex("Команда (hex, 00–FF)", command, 0xFF, val -> {
+        cEdit.setOnClickListener(v -> askHex("Команда (hex)", command, IrCodec.maxCommand(protocol), val -> {
             command = val;
             sendCurrent();
         }));
@@ -202,12 +211,12 @@ public class SetupActivity extends Activity {
 
         root.addView(Ui.title(this, "Перебор"));
         LinearLayout mr = Ui.row(this);
-        modeAddrBtn = Ui.button(this, "1. Найти адрес", Ui.KEY);
+        modeAddrBtn = Ui.button(this, "1. ⚡ Найти приставку", Ui.KEY);
         modeCmdBtn = Ui.button(this, "2. Подбор команд", Ui.KEY);
         modeAddrBtn.setOnClickListener(v -> {
             stop();
-            mode = MODE_ADDR;
-            refresh();
+            startActivity(new Intent(this, FastSearchActivity.class));
+            finish();
         });
         modeCmdBtn.setOnClickListener(v -> {
             stop();
@@ -284,6 +293,8 @@ public class SetupActivity extends Activity {
     private void setProtocol(String p) {
         stop();
         protocol = p;
+        if (address > IrCodec.maxAddress(p)) address = 0;
+        if (command > IrCodec.maxCommand(p)) command = 0;
         cfg.setProtocol(p);
         refresh();
     }
@@ -322,8 +333,8 @@ public class SetupActivity extends Activity {
                 }
             } else {
                 delay = SPEEDS[speed];
-                if (command == 0xFF) {
-                    ui.postDelayed(() -> finishScan("Все 256 команд перебраны."), delay);
+                if (command >= IrCodec.maxCommand(protocol)) {
+                    ui.postDelayed(() -> finishScan("Все команды перебраны."), delay);
                     return;
                 }
                 command++;
@@ -342,7 +353,7 @@ public class SetupActivity extends Activity {
             Toast.makeText(this, "На этом телефоне нет ИК-передатчика", Toast.LENGTH_LONG).show();
             return;
         }
-        if (mode == MODE_ADDR || command == 0xFF) command = 0;
+        if (mode == MODE_ADDR || command >= IrCodec.maxCommand(protocol)) command = 0;
         running = true;
         ui.post(step);
         refresh();
@@ -495,9 +506,10 @@ public class SetupActivity extends Activity {
     // ---------- state -> views ----------
 
     private void refresh() {
-        boolean nec = IrCodec.NEC.equals(protocol);
-        necBtn.setBackground(Ui.round(this, nec ? Ui.ACCENT : Ui.KEY, 14));
-        samBtn.setBackground(Ui.round(this, nec ? Ui.KEY : Ui.ACCENT, 14));
+        necBtn.setBackground(Ui.round(this, IrCodec.NEC.equals(protocol) ? Ui.ACCENT : Ui.KEY, 14));
+        samBtn.setBackground(Ui.round(this, IrCodec.SAMSUNG.equals(protocol) ? Ui.ACCENT : Ui.KEY, 14));
+        rc5Btn.setBackground(Ui.round(this, IrCodec.RC5.equals(protocol) ? Ui.ACCENT : Ui.KEY, 14));
+        rc6Btn.setBackground(Ui.round(this, IrCodec.RC6.equals(protocol) ? Ui.ACCENT : Ui.KEY, 14));
         modeAddrBtn.setBackground(Ui.round(this, mode == MODE_ADDR ? Ui.ACCENT : Ui.KEY, 14));
         modeCmdBtn.setBackground(Ui.round(this, mode == MODE_CMD ? Ui.ACCENT : Ui.KEY, 14));
         speedBtn.setText("Скорость подбора команд: " + SPEED_NAMES[speed]);
@@ -515,7 +527,8 @@ public class SetupActivity extends Activity {
                 stateView.setText("Ищу адрес: " + IrCodec.hex(address, 2) + " (" + idx + " из 256), команда "
                         + IrCodec.hex(command, 2));
             } else {
-                stateView.setText("Перебираю команды: " + IrCodec.hex(command, 2) + " из 0xFF");
+                stateView.setText("Перебираю команды: " + IrCodec.hex(command, 2) + " из "
+                        + IrCodec.hex(IrCodec.maxCommand(protocol), 2));
             }
         } else {
             startBtn.setText(mode == MODE_ADDR ? "▶ Старт: найти адрес" : "▶ Старт: подбор с " + IrCodec.hex(command, 2));

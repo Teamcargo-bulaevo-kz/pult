@@ -20,6 +20,10 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".FastSearchActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+        <activity
             android:name=".SetupActivity"
             android:exported="false"
             android:label="Настройка"

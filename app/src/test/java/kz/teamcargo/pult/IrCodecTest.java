@@ -47,4 +47,34 @@ public class IrCodecTest {
         assertEquals(-1, IrCodec.parseHex(""));
         assertEquals("0x0A", IrCodec.hex(10, 2));
     }
+
+    @Test
+    public void rc5Shape() {
+        // address 8, command 0x0C (standby), toggle 0: 14 Manchester bits of 1778 us
+        int[] p = IrCodec.rc5(8, 0x0C, false);
+        assertEquals(889, p[0]); // starts with the mark half of S1
+        assertEquals(114000, IrCodec.durationUs(p));
+        for (int v : p) assertTrue(v == 889 || v == 1778 || v > 20000);
+    }
+
+    @Test
+    public void rc6Shape() {
+        int[] p = IrCodec.rc6(0x00, 0x0C, false);
+        assertEquals(2664, p[0]);
+        assertEquals(888, p[1]);
+        assertEquals(107000, IrCodec.durationUs(p));
+        assertEquals(36000, IrCodec.freq(IrCodec.RC6));
+    }
+
+    @Test
+    public void fastSearchHasEveryNecAddressOnce() {
+        int nec = 0;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (FastSearch.Candidate c : FastSearch.candidates()) {
+            assertTrue(seen.add(c.name()));
+            if (IrCodec.NEC.equals(c.protocol)) nec++;
+        }
+        assertEquals(256, nec);
+        assertEquals(IrCodec.NEC, FastSearch.candidates().get(0).protocol);
+    }
 }

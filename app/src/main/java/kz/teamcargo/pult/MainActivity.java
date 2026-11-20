@@ -34,6 +34,7 @@ public class MainActivity extends Activity {
     private final Map<String, Button> buttons = new HashMap<>();
     private final Map<String, Integer> colors = new HashMap<>();
     private TextView status;
+    private Button findBtn;
     private Runnable repeater;
 
     @Override
@@ -89,6 +90,14 @@ public class MainActivity extends Activity {
             warn.setPadding(pad, pad / 2, pad, pad / 2);
             root.addView(warn);
         }
+
+        findBtn = Ui.button(this, "⚡ Найти мою приставку (1–5 минут)", Ui.GREEN);
+        findBtn.setTextSize(18);
+        findBtn.setMinHeight(Ui.dp(this, 64));
+        findBtn.setOnClickListener(v -> startActivity(new Intent(this, FastSearchActivity.class)));
+        LinearLayout fr = Ui.row(this);
+        Ui.add(fr, findBtn, 1);
+        root.addView(fr);
 
         root.addView(keys(new String[]{"power", "mute", "tvradio", "sleep"},
                 new String[]{"⏻", "🔇", "ТВ/Р", "Сон"}, new int[]{Ui.RED, 0, 0, 0}));
@@ -187,8 +196,14 @@ public class MainActivity extends Activity {
     private void askSetup(String id) {
         new AlertDialog.Builder(this)
                 .setTitle(Keys.label(id))
-                .setMessage("Эта кнопка ещё не настроена. Подобрать код для неё?")
-                .setPositiveButton("Подобрать", (d, w) -> {
+                .setMessage(cfg.addressFound()
+                        ? "Эта кнопка ещё не настроена. Подобрать код для неё?"
+                        : "Сначала найди приставку кнопкой «⚡ Найти мою приставку» вверху, потом подбирай кнопки.")
+                .setPositiveButton(cfg.addressFound() ? "Подобрать" : "Найти приставку", (d, w) -> {
+                    if (!cfg.addressFound()) {
+                        startActivity(new Intent(this, FastSearchActivity.class));
+                        return;
+                    }
                     Intent i = new Intent(this, SetupActivity.class);
                     i.putExtra(SetupActivity.EXTRA_KEY, id);
                     startActivity(i);
@@ -199,6 +214,7 @@ public class MainActivity extends Activity {
 
     private void refresh() {
         int n = cfg.configuredCount();
+        findBtn.setVisibility(cfg.addressFound() || n > 0 ? android.view.View.GONE : android.view.View.VISIBLE);
         status.setText("Настроено кнопок: " + n + " из " + Keys.ALL.size()
                 + " · " + cfg.protocol() + " " + IrCodec.hex(cfg.address(), cfg.address() > 0xFF ? 4 : 2));
         for (Map.Entry<String, Button> e : buttons.entrySet()) {

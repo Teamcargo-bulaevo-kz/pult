@@ -40,6 +40,14 @@ public final class Config {
         else sp.edit().putInt("k_" + key, cmd & 0xFF).apply();
     }
 
+    public boolean addressFound() {
+        return sp.getBoolean("address_found", false);
+    }
+
+    public void setAddressFound(boolean f) {
+        sp.edit().putBoolean("address_found", f).apply();
+    }
+
     public int configuredCount() {
         int n = 0;
         for (String k : Keys.ALL.keySet()) if (command(k) >= 0) n++;
@@ -74,7 +82,7 @@ public final class Config {
             String val = line.substring(eq + 1).trim();
             if (name.equals("protocol")) {
                 String p = val.toUpperCase();
-                if (p.equals(IrCodec.NEC) || p.equals(IrCodec.SAMSUNG)) {
+                if (IrCodec.known(p)) {
                     ed.putString("protocol", p);
                     any = true;
                 }
@@ -82,6 +90,7 @@ public final class Config {
                 int a = IrCodec.parseHex(val);
                 if (a >= 0) {
                     ed.putInt("address", a);
+                    ed.putBoolean("address_found", true);
                     any = true;
                 }
             } else if (Keys.ALL.containsKey(name)) {

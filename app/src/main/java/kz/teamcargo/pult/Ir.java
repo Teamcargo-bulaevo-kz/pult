@@ -9,6 +9,7 @@ import android.os.HandlerThread;
 public final class Ir {
     private final ConsumerIrManager ir;
     private final Handler worker;
+    private boolean toggle;
 
     public Ir(Context ctx) {
         ir = (ConsumerIrManager) ctx.getSystemService(Context.CONSUMER_IR_SERVICE);
@@ -27,10 +28,12 @@ public final class Ir {
 
     public void send(String protocol, int address, int command) {
         if (!available()) return;
-        final int[] pattern = IrCodec.pattern(protocol, address, command);
+        toggle = !toggle; // RC5/RC6 need a new toggle bit for every new press
+        final int[] pattern = IrCodec.pattern(protocol, address, command, toggle);
+        final int freq = IrCodec.freq(protocol);
         worker.post(() -> {
             try {
-                ir.transmit(IrCodec.FREQ, pattern);
+                ir.transmit(freq, pattern);
             } catch (RuntimeException ignored) {
                 // Some firmwares throw when the emitter is busy; the next press works.
             }

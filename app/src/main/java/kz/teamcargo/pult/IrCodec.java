@@ -12,6 +12,112 @@ public final class IrCodec {
 
     public static final String NEC = "NEC";
     public static final String SAMSUNG = "SAMSUNG";
+    public static final String RC5 = "RC5";
+    public static final String RC6 = "RC6";
+    public static final String[] PROTOCOLS = {NEC, SAMSUNG, RC5, RC6};
+
+    public static boolean known(String p) {
+        for (String k : PROTOCOLS) if (k.equals(p)) return true;
+        return false;
+    }
+
+    public static int freq(String protocol) {
+        return RC5.equals(protocol) || RC6.equals(protocol) ? 36000 : FREQ;
+    }
+
+    /** Highest address the protocol can carry. */
+    public static int maxAddress(String protocol) {
+        if (RC5.equals(protocol)) return 0x1F;
+        if (RC6.equals(protocol)) return 0xFF;
+        return 0xFFFF;
+    }
+
+    public static int maxCommand(String protocol) {
+        return RC5.equals(protocol) ? 0x7F : 0xFF;
+    }
+
+    public static int[] pattern(String protocol, int address, int command, boolean toggle) {
+        if (RC5.equals(protocol)) return rc5(address, command, toggle);
+        if (RC6.equals(protocol)) return rc6(address, command, toggle);
+        return pattern(protocol, address, command);
+    }
+
+    private static final int RC5_HALF = 889;
+
+    /** Philips RC5: Manchester, bit 1 = space then mark, MSB first. */
+    static int[] rc5(int address, int command, boolean toggle) {
+        Levels l = new Levels();
+        int field = ((command >> 6) & 1) == 0 ? 1 : 0;
+        int[] bits = new int[14];
+        bits[0] = 1;
+        bits[1] = field;
+        bits[2] = toggle ? 1 : 0;
+        for (int i = 0; i < 5; i++) bits[3 + i] = (address >> (4 - i)) & 1;
+        for (int i = 0; i < 6; i++) bits[8 + i] = (command >> (5 - i)) & 1;
+        for (int b : bits) {
+            if (b == 1) {
+                l.add(false, RC5_HALF);
+                l.add(true, RC5_HALF);
+            } else {
+                l.add(true, RC5_HALF);
+                l.add(false, RC5_HALF);
+            }
+        }
+        return l.finish(114000);
+    }
+
+    private static final int RC6_T = 444;
+
+    /** Philips RC6 mode 0: leader, start 1, mode 000, double-width toggle, 8+8 bits. */
+    static int[] rc6(int address, int command, boolean toggle) {
+        Levels l = new Levels();
+        l.add(true, RC6_T * 6);
+        l.add(false, RC6_T * 2);
+        rc6Bit(l, 1, 1);
+        for (int i = 0; i < 3; i++) rc6Bit(l, 0, 1);
+        rc6Bit(l, toggle ? 1 : 0, 2);
+        for (int i = 7; i >= 0; i--) rc6Bit(l, (address >> i) & 1, 1);
+        for (int i = 7; i >= 0; i--) rc6Bit(l, (command >> i) & 1, 1);
+        return l.finish(107000);
+    }
+
+    /** RC6 bit 1 = mark then space, bit 0 = space then mark. */
+    private static void rc6Bit(Levels l, int bit, int width) {
+        l.add(bit == 1, RC6_T * width);
+        l.add(bit != 1, RC6_T * width);
+    }
+
+    /** Collects mark/space halves, merges neighbours, drops a leading space. */
+    private static final class Levels {
+        private final List<Integer> out = new ArrayList<>();
+        private boolean lastMark = false;
+
+        void add(boolean mark, int us) {
+            if (out.isEmpty()) {
+                if (!mark) return;
+                out.add(us);
+                lastMark = true;
+                return;
+            }
+            if (mark == lastMark) {
+                out.set(out.size() - 1, out.get(out.size() - 1) + us);
+            } else {
+                out.add(us);
+                lastMark = mark;
+            }
+        }
+
+        int[] finish(int frameUs) {
+            int used = 0;
+            for (int v : out) used += v;
+            int gap = Math.max(frameUs - used, 20000);
+            if (lastMark) out.add(gap);
+            else out.set(out.size() - 1, out.get(out.size() - 1) + gap);
+            int[] r = new int[out.size()];
+            for (int i = 0; i < r.length; i++) r[i] = out.get(i);
+            return r;
+        }
+    }
 
     private static final int BIT_MARK = 560;
     private static final int ZERO_SPACE = 560;
